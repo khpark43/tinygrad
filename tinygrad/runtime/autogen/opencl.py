@@ -118,7 +118,7 @@ class Union(ctypes.Union, AsDictMixin):
 
 
 _libraries = {}
-_libraries['libOpenCL.so.1'] = ctypes.CDLL(ctypes.util.find_library('OpenCL'))
+_libraries['libOpenCL.so.1'] = ctypes.CDLL("/nix/store/hxqvjpkmfd69d16al5vka7hnlqwzg6fn-ocl-icd-2.3.2/lib/libOpenCL.so")
 c_int128 = ctypes.c_ubyte*16
 c_uint128 = c_int128
 void = None
