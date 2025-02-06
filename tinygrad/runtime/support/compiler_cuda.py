@@ -40,7 +40,7 @@ def cuda_disassemble(lib, arch):
 
 class CUDACompiler(Compiler):
   def __init__(self, arch:str, cache_key:str="cuda"):
-    self.arch, self.compile_options = arch, [f'--gpu-architecture={arch}', "-I/usr/local/cuda/include", "-I/usr/include", "-I/opt/cuda/include/"]
+    self.arch, self.compile_options = arch, [f'--gpu-architecture={arch}', "-I/usr/local/cuda/include", "-I/usr/include", "-I/opt/cuda/include/", "-I/nix/store/sxcbv7hiy9h8d2xr64ixbryi5qa7ngsb-cuda-merged-12.4/include"]
     nvrtc_check(nvrtc.nvrtcVersion((nvrtcMajor := ctypes.c_int()), (nvrtcMinor := ctypes.c_int())))
     if (nvrtcMajor.value, nvrtcMinor.value) >= (12, 4): self.compile_options.append("--minimal")
     super().__init__(f"compile_{cache_key}_{self.arch}")
