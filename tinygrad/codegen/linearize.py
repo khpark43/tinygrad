@@ -74,8 +74,10 @@ make_basic_blocks = PatternMatcher([
   (UPat(Ops.BLOCK, name="x"), append_to_block),
 ])
 
-def block_merge(ctx, x:UOp):
+def block_merge(ctx: dict[UOp, list[UOp]], x:UOp):
   # ctx is children here
+  if x.op is Ops.BLOCKFORK and len(x.src) == 1 and len(ctx[x]) == 1:
+    return x.src[0]
   if x.op is Ops.BLOCKEND:
     # if it's a BLOCKEND, see if we are done with placement. if all the children of the range are in here
     in_this_block = set(x.arg.lst)
@@ -198,13 +200,47 @@ def linearize_uop(sink:UOp, skip_check:bool=not __debug__) -> list[UOp]:
   for be in sink.toposort:
     if be.op is Ops.BLOCKEND: blockends_to_arg.setdefault(be.arg.end, []).append(be)
   new_forks = {}
+
+  children: dict[UOp, list[UOp]] = {}
+  for u in sink.toposort:
+    this_block_ctx: list[UOp] = []
+    for s in u.src:
+      children.setdefault(s, []).append(u)
+
   for k,v in blockends_to_arg.items():
     # NOTE: if any BLOCKEND is the parent of any other with the same arg, this algo fails
     if len(v) > 1:
+      print("fjdisoa")
+      print(list(map(lambda x: x.op, dedup(flatten(children[vv] for vv in v)))))
+      print("fjdisoa")
       out = UOp(Ops.BLOCKFORK, src=(UOp(Ops.BLOCKEND, src=tuple(flatten(x.src for x in v)),
-                                        arg=BasicBlock(tuple(dedup(flatten([y.arg.ctx for y in v]))), v[0].arg.lst, k)),), arg=len(v))
+                                        arg=BasicBlock(tuple(dedup(flatten([y.arg.ctx for y in v]))), v[0].arg.lst, k)),), arg=len(dedup(flatten(children[vv] for vv in v))))
       for u in v: new_forks[u] = out
+    # break
   sink = sink.substitute(new_forks)
+
+  src_blocks: dict[UOp, list[UOp]] = {}
+  new = {}
+  for u in sink.toposort:
+    this_block_ctx: list[UOp] = []
+    for s in u.src:
+      # save children
+      children.setdefault(s, []).append(u)
+      # compute block ctx
+      if s.op in {Ops.BLOCKFORK}: this_block_ctx.append(s)
+      else:
+        # flow though everything else
+        this_block_ctx += src_blocks[s]
+    for si in u.src:
+      for sj in u.src:
+        if sj in src_blocks[si] and si is not sj:
+          # remove sj from u.src
+          new[u] = u.replace(src=tuple([z for z in u.src if z is not sj]))
+          print(sj.op)
+          print(si.op)
+    src_blocks[u] = sorted(dedup(this_block_ctx), key=lambda x: x.tuplize)
+  sink = sink.substitute(new)
+      
 
   # reorder ops in block for speed
   sink = sink.substitute({u:newu for u in sink.toposort if u.op is Ops.BLOCK and (newu:=block_reorder(u)) is not u})
