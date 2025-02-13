@@ -74,8 +74,7 @@ make_basic_blocks = PatternMatcher([
   (UPat(Ops.BLOCK, name="x"), append_to_block),
 ])
 
-def block_merge(ctx, x:UOp):
-  # ctx is children here
+def block_merge(ctx: dict[UOp, list[UOp]], x:UOp):
   if x.op is Ops.BLOCKEND:
     # if it's a BLOCKEND, see if we are done with placement. if all the children of the range are in here
     in_this_block = set(x.arg.lst)
@@ -208,9 +207,68 @@ def linearize_uop(sink:UOp, skip_check:bool=not __debug__) -> list[UOp]:
 
   # reorder ops in block for speed
   sink = sink.substitute({u:newu for u in sink.toposort if u.op is Ops.BLOCK and (newu:=block_reorder(u)) is not u})
+  sink = graph_rewrite(sink, pm_block_merge, ctx=children)
+
+  for i in range(100):
+    src_blocks: dict[UOp, set[UOp]] = {}
+    new = {}
+    for u in sink.toposort:
+      this_block_ctx: list[UOp] = []
+      for s in u.src:
+        # compute block ctx
+        if s.op is Ops.BLOCKFORK: this_block_ctx.append(s)
+        else:
+          # flow though everything else
+          this_block_ctx += src_blocks[s]
+      for si in u.src:
+        for sj in u.src:
+          if sj in src_blocks[si] and si is not sj:
+            # remove sj from u.src
+            new[u] = u.replace(src=tuple(set([z for z in u.src if z is not sj])))
+            sink = sink.substitute(new)
+            print(sj.op)
+            print(si.op)
+      src_blocks[u] = set(this_block_ctx)
+
+  while True:
+    ctxx = collections.defaultdict(int)
+    for u in sink.toposort:
+      for s in u.src:
+        if s.op is Ops.BLOCKFORK:
+          ctxx[s] += 1
+    changed = False
+    for u in sink.toposort:
+      if u.op is Ops.BLOCKFORK and ctxx[u] != u.arg:
+        sink = sink.substitute({u: u.replace(arg=ctxx[u])})
+        changed = True
+        break
+    if not changed: break
 
   # final rewrite to merge all blocks into one
   sink = graph_rewrite(sink, pm_block_merge, ctx=children)
+
+  # for i in range(10):
+  #   src_blocks: dict[UOp, set[UOp]] = {}
+  #   new = {}
+  #   for u in sink.toposort:
+  #     this_block_ctx: list[UOp] = []
+  #     for s in u.src:
+  #       # compute block ctx
+  #       if s.op is Ops.BLOCKFORK: this_block_ctx.append(s)
+  #       else:
+  #         # flow though everything else
+  #         this_block_ctx += src_blocks[s]
+  #     for si in u.src:
+  #       for sj in u.src:
+  #         if sj in src_blocks[si] and si is not sj:
+  #           # remove sj from u.src
+  #           new[u] = u.replace(src=tuple(set([z for z in u.src if z is not sj])))
+  #           sink = sink.substitute(new)
+  #           print(sj.op)
+  #           print(si.op)
+  #     src_blocks[u] = set(this_block_ctx)
+  #
+  #   sink = graph_rewrite(sink, pm_block_merge, ctx=children)
 
   # there should just be one block left, with a few parents with 0 srcs
   assert sink.op is Ops.BLOCK
